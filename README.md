@@ -5,19 +5,6 @@
 ![pytorch](https://img.shields.io/badge/PyTorch-%E2%9D%A4-red)
 ![transformers](https://img.shields.io/badge/transformers-HuggingFace-orange)
 
-This README now includes an extended visual gallery, interpretation tips for each diagnostic, example configs and commands, and small helper scripts to generate and embed real visual artifacts into the repository. The intention is to make it obvious what to look for when reproducing or debugging model behavior.
-
-Table of contents
-- Project overview
-- Visual gallery (with interpretation & actionable checks)
-- How visuals are generated (notebook & script examples)
-- Quick start (interactive & headless)
-- Example configs (paper / fast) and recommended hyperparameters
-- Pinned dependencies (suggested requirements.txt)
-- Reproducibility checklist & tips
-- Contributing, artifacts & storage recommendations
-- Next steps I can add
-
 Project overview (short)
 ------------------------
 Reproduction artifact for "Deep Active Learning for Multi-Label". Main entry point: `reproduce.ipynb` — contains data loading, BERT-based multi-label model, training/resume logic, and diagnostic visualizations.
