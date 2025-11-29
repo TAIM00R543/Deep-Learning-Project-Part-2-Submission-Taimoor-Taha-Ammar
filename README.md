@@ -129,3 +129,77 @@ Acknowledgements & references
 
 ---
 Generated on Nov 29, 2025. If you want any section expanded (detailed run commands, exact config parameters, or a `requirements.txt`), tell me which part and I'll add it.
+
+## Detailed Methods, Model & Training (full reproducibility)
+
+1) Model architecture
+- Base encoder: `bert-base-uncased` (HuggingFace Transformers).
+- Wrapper: `BertForMultiLabel` — a lightweight classification head on top of BERT:
+  - Pooling: uses BERT's `[CLS]` embedding (hidden state at index 0) or mean-pooling depending on the notebook cell.
+  - Classification head: a single linear layer mapping encoder hidden-size (768) to `num_labels` (dataset dependent), followed by optional dropout (p=0.1).
+  - Loss: binary cross-entropy with logits (`torch.nn.functional.binary_cross_entropy_with_logits`) for multi-label prediction.
+
+2) Data preprocessing
+- Input: CSVs with columns for text and multi-hot label vectors (or label lists). The notebook contains a preprocessing cell that:
+  - tokenizes text using `BertTokenizer` with `truncation=True` and `max_length` (default 512 for full runs, lower for FAST runs).
+  - builds `input_ids` and `attention_mask` tensors.
+  - collate function: the notebook uses a custom `collate_fn`/DataLoader that may return dicts or tuples; the helper `unpack_batch` normalizes this to `(input_ids, attention_mask, labels)`.
+
+3) Training loop and checkpointing
+- Optimizer: `AdamW` (weight decay enabled) with learning rates typical for BERT fine-tuning:
+  - Paper-scale runs: 2e-5 — 5e-5 for head-only; 1e-5 — 5e-6 when unfreezing encoder layers.
+  - Demo runs used small LR (e.g., 5e-6) to stabilize short fine-tuning.
+- Scheduler: optional linear warmup + decay (via `transformers.get_linear_schedule_with_warmup`).
+- Batch size: depends on GPU; typical values: 8, 16, 32. FAST mode uses smaller batches.
+- Epochs: full runs 10–40; FAST demo 1–5.
+- Checkpointing:
+  - Epoch-level checkpoints saved under `models/` with names like `BEAL_seed{seed}_round{n}.pt`.
+  - Resume logic: the notebook's `LOAD_CHECKPOINT_IF_EXISTS` finds the latest matching checkpoint and loads model weights; `WARM_START` and `EXTRA_EPOCHS_ON_CHECKPOINT` control optimizer/extra training.
+
+4) Evaluation & metrics
+- Model outputs logits; probabilities are `sigmoid(logits)`.
+- Default threshold: 0.5; the notebook includes threshold sweeps (0.1–0.6 or wider) to find better operating points.
+- Metrics: micro-F1 (primary), macro-F1, per-class precision/recall, and calibration plots.
+
+5) Exact hyperparameters used in demo runs (example)
+- Model: `bert-base-uncased`
+- Batch size: 16
+- Learning rate: 5e-6 (head + last layers)
+- Weight decay: 0.01
+- Dropout: 0.1
+- Optimizer: AdamW
+- Epochs (FAST demo): 3
+- Aggressive fine-tune example: up to 40 epochs with early stopping (patience=2)
+
+6) Reproduce a FAST demo (exact notebook steps)
+- Open `reproduce.ipynb` and run the setup cells.
+- In the `FAST_CONFIG` cell set `FAST_VALIDATION=True` (the notebook merges FAST onto PAPER config).
+- Optionally set `LOAD_CHECKPOINT_IF_EXISTS=False` to train from scratch.
+- Run the main training cell — FAST mode will use smaller datasets and fewer epochs for a quick run.
+
+7) Reproduce the targeted resume run used for debugging
+- Place `models/BEAL_seed42_round*.pt` into `models/` in the D: copy or point the notebook to your checkpoints.
+- Set `LOAD_CHECKPOINT_IF_EXISTS=True`, `WARM_START=True`, and `EXTRA_EPOCHS_ON_CHECKPOINT=5` (or desired value).
+- Run the resume/fine-tune cell — it will load the latest checkpoint and run the extra epochs.
+
+8) Headless commands for exact reproducibility
+```powershell
+cd D:\deeplearning_project
+jupyter nbconvert --to notebook --execute reproduce.ipynb --output reproduce_run.ipynb --ExecutePreprocessor.timeout=14400
+```
+
+9) Files to add for stronger reproducibility
+- `requirements.txt` (pinned versions)
+- `configs/paper.yaml` and `configs/fast.yaml` with the exact config values used in the notebook
+- `scripts/download_data.ps1` or `download_data.sh` to download large datasets / checkpoints
+
+10) Troubleshooting notes
+- If `micro-F1==0` at threshold 0.5 but loss decreases: run a threshold sweep; plot probability histograms; try longer fine-tuning or lower the LR.
+- If the aggressive runner errors on batch shapes, run the data/model setup cells first and use the `unpack_batch` helper; inspect one batch (`repr(next(iter(train_loader)))`) to see exact structure.
+
+11) Reproducibility checklist
+- Fix seeds: `random`, `numpy`, `torch` (+ `torch.cuda.manual_seed_all`)
+- Save the git commit hash and full config to `results/statistics.json` for each run
+- Export `pip freeze > requirements-frozen.txt` once you lock the environment
+
+If you'd like, I can now add a pinned `requirements.txt` and a `configs/` folder with `paper.yaml` and `fast.yaml` to the repo and push them. Tell me which you want me to add next.
