@@ -1,205 +1,224 @@
-# Deep Learning Project — Reproduction & Demo
+# 🎨 Deep Learning Project — Reproducibility, Diagnostics & Visual Gallery
 
-This repository contains the reproduction code, data pointers, and demo notebook for the Deep Active Learning for Multi-Label project (submission: Taimoor Taha Ammar).
+![demo-ready](https://img.shields.io/badge/demo-ready-brightgreen)
+![python](https://img.shields.io/badge/python-3.10%2B-blue)
+![pytorch](https://img.shields.io/badge/PyTorch-%E2%9D%A4-red)
+![transformers](https://img.shields.io/badge/transformers-HuggingFace-orange)
 
-Contents
-- `reproduce.ipynb` — main Jupyter notebook that contains data loading, model definition (BERT multi-label wrapper), training, resume logic, evaluation and visualization cells.
-- `train.csv`, `dev.csv`, `test.csv` — dataset CSVs used in the notebook (note: `train.csv` is ~56 MB).
-- `Deep active learning for multi label.pdf` — project write-up.
-- `models/` (not included in this push by default) — checkpoints. Large; keep out of Git or use Git LFS.
-- `results/` (not included in this push by default) — evaluation outputs and visualizations.
+This README now includes an extended visual gallery, interpretation tips for each diagnostic, example configs and commands, and small helper scripts to generate and embed real visual artifacts into the repository. The intention is to make it obvious what to look for when reproducing or debugging model behavior.
 
-Quick Overview
--------------
-This repo is designed to support both a "paper-scale" run and a much faster demo run. The notebook supports:
-- FAST demo mode via `FAST_CONFIG`/`FAST_VALIDATION` (shorter epochs, smaller subsets) to get results quickly.
-- Resume / warm-start behavior: automatic detection/load of latest checkpoint and options to warm-start and run extra epochs.
-- Visualization cells that produce threshold sweeps, probability histograms, loss curves and reliability diagrams.
+Table of contents
+- Project overview
+- Visual gallery (with interpretation & actionable checks)
+- How visuals are generated (notebook & script examples)
+- Quick start (interactive & headless)
+- Example configs (paper / fast) and recommended hyperparameters
+- Pinned dependencies (suggested requirements.txt)
+- Reproducibility checklist & tips
+- Contributing, artifacts & storage recommendations
+- Next steps I can add
 
-Requirements
-------------
-Recommended Python environment (tested with Python 3.10+):
+Project overview (short)
+------------------------
+Reproduction artifact for "Deep Active Learning for Multi-Label". Main entry point: `reproduce.ipynb` — contains data loading, BERT-based multi-label model, training/resume logic, and diagnostic visualizations.
 
-- torch (PyTorch)
-- transformers
-- scikit-learn
-- pandas
-- numpy
-- matplotlib
-- seaborn
-- jupyter
-- nbconvert
+Visual gallery — what you should expect and how to read it
+----------------------------------------------------------
 
-You can install the most common dependencies with:
+Note: These inline images are illustrative (QuickChart generated). After you run the notebook you'll get real PNGs in `results/visualizations/`; replace these sample URLs by the actual files (preferably via relative links).
+
+1) Probability histogram (per-class or aggregated)
+![Probability Histogram](https://quickchart.io/chart?c=%7B%22type%22%3A%22bar%22%2C%22data%22%3A%7B%22labels%22%3A%5B%220.0-0.1%22%2C%220.1-0.2%22%2C%220.2-0.3%22%2C%220.3-0.4%22%2C%220.4-0.5%22%2C%220.5-0.6%22%2C%220.6-0.7%22%2C%220.7-0.8%22%2C%220.8-0.9%22%2C%220.9-1.0%22%5D%2C%22datasets%22%3A%5B%7B%22label%22%3A%22Probability%20count%22%2C%22data%22%3A%5B5%2C10%2C18%2C30%2C45%2C40%2C25%2C15%2C8%2C4%5D%2C%22backgroundColor%22%3A%22rgba(75%2C192%2C192%2C0.7)%22%7D%5D%7D%2C%22options%22%3A%7B%22title%22%3A%7B%22display%22%3Atrue%2C%22text%22%3A%22Sample%20Probability%20Histogram%22%7D%7D%7D)
+
+- What it shows: distribution of predicted probabilities across buckets.
+- Actionable checks:
+  - If almost all probabilities are near 0 or 1 (peaked) — model is confident; ensure calibration.
+  - If probabilities cluster near 0 with low positives but loss decreasing — thresholding or class imbalance issues.
+  - Inspect per-class histograms for imbalance or collapsed predictions.
+
+2) Threshold sweep (micro-F1 vs threshold)
+![Threshold Sweep](https://quickchart.io/chart?c=%7B%22type%22%3A%22line%22%2C%22data%22%3A%7B%22labels%22%3A%5B%220.1%22%2C%220.2%22%2C%220.3%22%2C%220.4%22%2C%220.5%22%2C%220.6%22%2C%220.7%22%5D%2C%22datasets%22%3A%5B%7B%22label%22%3A%22micro-F1%22%2C%22data%22%3A%5B0.42%2C0.47%2C0.53%2C0.56%2C0.51%2C0.44%2C0.30%5D%2C%22borderColor%22%3A%22%233e95cd%22%2C%22fill%22%3Afalse%7D%5D%7D%2C%22options%22%3A%7B%22title%22%3A%7B%22display%22%3Atrue%2C%22text%22%3A%22Threshold%20Sweep%20%28sample%29%22%7D%7D%7D)
+
+- What it shows: how micro-F1 varies as you sweep the binary threshold applied to sigmoid outputs.
+- Actionable checks:
+  - If best threshold ≠ 0.5, prefer the better threshold for final metrics.
+  - Use this to set operational trade-offs (precision vs recall).
+
+3) Reliability diagram / calibration plot
+![Reliability Diagram](https://quickchart.io/chart?c=%7B%22type%22%3A%22line%22%2C%22data%22%3A%7B%22labels%22%3A%5B%220.0%22%2C%220.1%22%2C%220.2%22%2C%220.3%22%2C%220.4%22%2C%220.5%22%2C%220.6%22%2C%220.7%22%2C%220.8%22%2C%220.9%22%2C%221.0%22%5D%2C%22datasets%22%3A%5B%7B%22label%22%3A%22observed%22%2C%22data%22%3A%5B0.02%2C0.08%2C0.15%2C0.25%2C0.38%2C0.52%2C0.61%2C0.75%2C0.82%2C0.92%2C0.99%5D%2C%22borderColor%22%3A%22%23FF6F61%22%2C%22fill%22%3Afalse%7D%2C%7B%22label%22%3A%22perfect%22%2C%22data%22%3A%5B0%2C0.1%2C0.2%2C0.3%2C0.4%2C0.5%2C0.6%2C0.7%2C0.8%2C0.9%2C1.0%5D%2C%22borderColor%22%3A%22%2300A86B%22%2C%22borderDash%22%3A%5B5%2C5%5D%2C%22fill%22%3Afalse%7D%5D%7D%2C%22options%22%3A%7B%22title%22%3A%7B%22display%22%3Atrue%2C%22text%22%3A%22Reliability%20Diagram%20%28sample%29%22%7D%7D%7D)
+
+- What it shows: average observed frequency vs predicted probability (calibration).
+- Actionable checks:
+  - If observed < predicted (curve below diagonal): model over-confident — consider temperature scaling or calibration techniques.
+  - If observed > predicted: model under-confident — may need better training or a different threshold.
+
+4) Loss & F1 curves with std bands (training/validation)
+![Loss & F1 Curves](https://quickchart.io/chart?c=%7B%22type%22%3A%22line%22%2C%22data%22%3A%7B%22labels%22%3A%5B%221%22%2C%222%22%2C%223%22%2C%224%22%2C%225%22%2C%226%22%5D%2C%22datasets%22%3A%5B%7B%22label%22%3A%22train_loss%22%2C%22data%22%3A%5B1.2%2C0.9%2C0.8%2C0.75%2C0.72%2C0.70%5D%2C%22borderColor%22%3A%22%237b9acc%22%7D%2C%7B%22label%22%3A%22val_micro_f1%22%2C%22data%22%3A%5B0.30%2C0.40%2C0.45%2C0.50%2C0.51%2C0.49%5D%2C%22borderColor%22%3A%22%23e76f51%22%7D%5D%7D%7D)
+
+- What it shows: training loss declining and validation F1. Std bands (if multiple seeds) give uncertainty estimate.
+- Actionable checks:
+  - Diverging loss/F1 patterns → overfitting or data mismatch.
+  - No validation improvement but training loss decreases → try lower LR, regularize, or inspect labels.
+
+5) Per-class precision/recall & co-occurrence heatmap
+- What it shows: which labels the model struggles with; which label pairs commonly co-occur.
+- Actionable checks:
+  - Low precision & high recall for a class → many false positives, perhaps noisy labels.
+  - Co-occurrence heatmap can reveal label dependencies worth modeling explicitly.
+
+How visuals are generated (notebook & script examples)
+------------------------------------------------------
+The notebook contains cells that compute metrics and save plots using matplotlib/seaborn. Example snippet (from notebook) that saves a histogram:
+
+```python
+# inside reproduce.ipynb
+plt.figure(figsize=(8,4))
+sns.histplot(probabilities.flatten(), bins=20, kde=False, color='teal')
+plt.title("Probability histogram (aggregated)")
+plt.xlabel("Predicted probability")
+plt.ylabel("Count")
+plt.tight_layout()
+plt.savefig("results/visualizations/prob_hist.png", dpi=150)
+```
+
+Small helper script to regenerate all visualizations from a serialized eval file (example: `results/eval_outputs.json`):
+
+```bash
+# scripts/generate_visuals.sh
+#!/usr/bin/env bash
+set -e
+python scripts/plot_from_eval.py --eval results/eval_outputs.json --outdir results/visualizations
+```
+
+- `scripts/plot_from_eval.py` should load JSON or npz saved by the notebook and create the charts (examples included in notebook). If you want, I can add this script for you.
+
+Embedding real visuals in README
+-------------------------------
+Two recommended ways:
+1. Commit generated PNGs under `results/visualizations/` and reference them with relative links:
+   - `![Probability Histogram](results/visualizations/prob_hist.png)`
+   - Pros: simple, self-contained.
+   - Cons: increases repo size; use Git LFS for many/large images.
+
+2. Host images externally (GitHub Releases, S3, or an image CDN) and link to absolute URLs:
+   - Pros: keeps repo small.
+   - Cons: external dependency.
+
+Quick start (interactive)
+-------------------------
+1. Create & activate venv (Windows example):
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install --upgrade pip
-pip install torch transformers scikit-learn pandas numpy matplotlib seaborn jupyter nbconvert
+pip install -r requirements.txt  # if you added it
 ```
 
-(If you prefer, create a `requirements.txt` from this list.)
+2. Open the notebook:
 
-Notes about large files
-----------------------
-- `train.csv` is ~56 MB; Git pushed it but GitHub warns about files >50 MB. For a cleaner repository, consider using Git LFS for `train.csv` and any large checkpoints in `models/`.
-- To enable Git LFS for large files, run:
-
-```powershell
-git lfs install
-git lfs track "train.csv"
-git lfs track "models/*"
-git add .gitattributes
-git add train.csv
-git commit -m "Track large files with git-lfs"
-git push
-```
-
-If you already pushed large files and want them removed from history, consider using the BFG Repo Cleaner or rewriting history carefully.
-
-How to run (interactive)
--------------------------
-1. Open Jupyter and run the notebook interactively:
-
-```powershell
-cd D:\deeplearning_project
+```bash
+cd <repo-root>
 jupyter notebook reproduce.ipynb
 ```
 
-2. Recommended order: run import/data/model-definition cells first (top of notebook), then:
-- If you only want a fast demo: enable FAST mode (cell named `FAST_CONFIG`) and run the main training cell.
-- To resume from existing checkpoints: run the cell that sets `LOAD_CHECKPOINT_IF_EXISTS = True` and configure `WARM_START` / `EXTRA_EPOCHS_ON_CHECKPOINT` as needed.
+3. Recommended notebook order:
+- Run top-level imports and dataset loader cells.
+- Configure mode: set FAST vs PAPER config cell.
+- Run training cell; run evaluation cell that saves `results/eval_outputs.json` and PNGs.
 
-How to run (headless)
----------------------
-You can execute the notebook headless using `nbconvert` (useful for CI or timed runs):
+Quick start (headless / CI)
+---------------------------
+Execute headlessly with nbconvert:
 
-```powershell
-cd D:\deeplearning_project
-jupyter nbconvert --to notebook --execute reproduce.ipynb --output reproduce_run.ipynb --ExecutePreprocessor.timeout=3600
+```bash
+jupyter nbconvert --to notebook --execute reproduce.ipynb \
+  --output reproduce_run.ipynb \
+  --ExecutePreprocessor.timeout=14400
 ```
 
-Adjust `--ExecutePreprocessor.timeout` as needed.
+Batch script to run FAST demo and then generate visuals:
 
-Reproducibility & checkpoints
------------------------------
-- Checkpoint paths used by the notebook: `models/BEAL_seed{seed}_round{n}.pt` and `models/BEAL_seed{seed}_resumed.pt`. When resuming, the notebook looks for the latest checkpoint for the configured seed.
-- Behavior flags (defined in the notebook):
-  - `LOAD_CHECKPOINT_IF_EXISTS` — if true, loads latest available checkpoint and optionally continues training.
-  - `WARM_START` — reuse model weights but reset optimizer (or vice versa) (see notebook comments).
-  - `EXTRA_EPOCHS_ON_CHECKPOINT` — number of extra epochs to run on top of resumed checkpoint.
+```bash
+# scripts/run_fast_and_visualize.sh
+jupyter nbconvert --to notebook --execute reproduce.ipynb --ExecutePreprocessor.timeout=7200 \
+  --ExecutePreprocessor.kernel_name=python3 \
+  --TagRemovePreprocessor.enabled=False
+bash scripts/generate_visuals.sh
+```
 
-Diagnostics & visualizations
-----------------------------
-The notebook contains several diagnostic cells to help explain low F1 (e.g., micro-F1 = 0 at threshold 0.5):
-- Probability histograms on dev/test sets
-- Threshold sweep (compute micro-F1 for multiple thresholds)
-- Training loss curves and F1 curves with standard-deviation bands
-- Reliability diagrams / calibration checks
+Example configs (recommended YAML files)
+--------------------------------------
+Store `configs/paper.yaml` and `configs/fast.yaml` and load them in the notebook to avoid re-editing cells.
 
-Look for `results/visualizations/` for PNG/JSON output (these directories may not be present in the pushed copy).
+Example: configs/fast.yaml
 
-If something is not running
+```yaml
+mode: fast
+seed: 42
+max_length: 128
+batch_size: 16
+learning_rate: 5e-6
+weight_decay: 0.01
+dropout: 0.1
+epochs: 3
+fast_validation: true
+dataset_subsample: 0.05  # use 5% of training set for FAST demo
+```
+
+Example: configs/paper.yaml
+
+```yaml
+mode: paper
+seed: 42
+max_length: 512
+batch_size: 16
+learning_rate: 2e-5
+weight_decay: 0.01
+dropout: 0.1
+epochs: 20
+fast_validation: false
+dataset_subsample: 1.0
+```
+
+Suggested pinned dependencies (example requirements.txt)
+--------------------------------------------------------
+Create `requirements.txt` to freeze the tested environment. Example (you may want to update versions):
+
+```text
+torch>=1.12.0,<2.1
+transformers>=4.15.0,<5.0
+scikit-learn>=1.0.2
+pandas>=1.3.0
+numpy>=1.21.0
+matplotlib>=3.4.0
+seaborn>=0.11.0
+jupyter>=1.0.0
+nbconvert>=6.0.0
+tqdm
+pyyaml
+```
+
+Reproducibility checklist & tips
+--------------------------------
+- Fix seeds: random, numpy, torch, torch.cuda.manual_seed_all.
+- Record commit SHA and config used in `results/statistics.json`.
+- Save env: `pip freeze > requirements-frozen.txt`.
+- Save model checkpoints with descriptive names (seed, round, mode).
+- For downstream reporting, save raw predictions and label indexes to JSON/npz for post-hoc analysis.
+
+Storage & artifact hygiene
 --------------------------
-- If you hit errors in the aggressive fine-tune runner, it is usually caused by heterogeneous batch formats returned by the `DataLoader`. The notebook includes a helper `unpack_batch` to normalize batch tuples/dicts to tensors — ensure the top data/model cells are run in the kernel before calling fine-tune cells.
-- If Git operations fail locally due to space issues, use another drive (e.g., `D:`) as done for this copy.
+- Use Git LFS for large CSVs, PNGs, or model checkpoints (files > 50 MB).
+- Preferred options for sharing large artifacts: GitHub Releases, Google Drive, S3, or Zenodo for citation.
+- If you accidentally pushed large files and want to remove them, consider the BFG Repo Cleaner.
 
-Recommended workflow for experiments
------------------------------------
-1. Use `FAST_CONFIG` for quick iterations.
-2. Inspect `results/statistics.json` after a successful run to check dev/test micro-F1 values and threshold behavior.
-3. If metrics are poor, try targeted resume/warm-start from the best checkpoint with a low learning rate for a few epochs.
-4. If you need to share checkpoints or large artifacts, upload them separately (GitHub Releases, Google Drive, or S3) or enable Git LFS.
+Contributing & next steps
+-------------------------
+I can:
+- Add `configs/paper.yaml` and `configs/fast.yaml` to the repo and update the notebook to load them.
+- Add `requirements.txt` with pinned versions and `requirements-frozen.txt`.
+- Add `scripts/generate_visuals.sh` and `scripts/plot_from_eval.py` (to produce the gallery PNGs from notebook outputs).
+- Generate a small set of sample visuals, commit them under `results/visualizations/`, and open a PR.
 
-Contributing & contact
-----------------------
-If you want changes, open an issue or contact the author (Taimoor Taha Ammar). This repository is intended as a reproduction artifact for the accompanying report.
-
-License
--------
-This repository does not include an explicit license file in this push. If you want an open-source license, add a `LICENSE` (e.g., MIT) and include license text here.
-
-Acknowledgements & references
------------------------------
-- HuggingFace Transformers (BERT)
-- PyTorch
-- scikit-learn
-
-
----
-Generated on Nov 29, 2025. If you want any section expanded (detailed run commands, exact config parameters, or a `requirements.txt`), tell me which part and I'll add it.
-
-## Detailed Methods, Model & Training (full reproducibility)
-
-1) Model architecture
-- Base encoder: `bert-base-uncased` (HuggingFace Transformers).
-- Wrapper: `BertForMultiLabel` — a lightweight classification head on top of BERT:
-  - Pooling: uses BERT's `[CLS]` embedding (hidden state at index 0) or mean-pooling depending on the notebook cell.
-  - Classification head: a single linear layer mapping encoder hidden-size (768) to `num_labels` (dataset dependent), followed by optional dropout (p=0.1).
-  - Loss: binary cross-entropy with logits (`torch.nn.functional.binary_cross_entropy_with_logits`) for multi-label prediction.
-
-2) Data preprocessing
-- Input: CSVs with columns for text and multi-hot label vectors (or label lists). The notebook contains a preprocessing cell that:
-  - tokenizes text using `BertTokenizer` with `truncation=True` and `max_length` (default 512 for full runs, lower for FAST runs).
-  - builds `input_ids` and `attention_mask` tensors.
-  - collate function: the notebook uses a custom `collate_fn`/DataLoader that may return dicts or tuples; the helper `unpack_batch` normalizes this to `(input_ids, attention_mask, labels)`.
-
-3) Training loop and checkpointing
-- Optimizer: `AdamW` (weight decay enabled) with learning rates typical for BERT fine-tuning:
-  - Paper-scale runs: 2e-5 — 5e-5 for head-only; 1e-5 — 5e-6 when unfreezing encoder layers.
-  - Demo runs used small LR (e.g., 5e-6) to stabilize short fine-tuning.
-- Scheduler: optional linear warmup + decay (via `transformers.get_linear_schedule_with_warmup`).
-- Batch size: depends on GPU; typical values: 8, 16, 32. FAST mode uses smaller batches.
-- Epochs: full runs 10–40; FAST demo 1–5.
-- Checkpointing:
-  - Epoch-level checkpoints saved under `models/` with names like `BEAL_seed{seed}_round{n}.pt`.
-  - Resume logic: the notebook's `LOAD_CHECKPOINT_IF_EXISTS` finds the latest matching checkpoint and loads model weights; `WARM_START` and `EXTRA_EPOCHS_ON_CHECKPOINT` control optimizer/extra training.
-
-4) Evaluation & metrics
-- Model outputs logits; probabilities are `sigmoid(logits)`.
-- Default threshold: 0.5; the notebook includes threshold sweeps (0.1–0.6 or wider) to find better operating points.
-- Metrics: micro-F1 (primary), macro-F1, per-class precision/recall, and calibration plots.
-
-5) Exact hyperparameters used in demo runs (example)
-- Model: `bert-base-uncased`
-- Batch size: 16
-- Learning rate: 5e-6 (head + last layers)
-- Weight decay: 0.01
-- Dropout: 0.1
-- Optimizer: AdamW
-- Epochs (FAST demo): 3
-- Aggressive fine-tune example: up to 40 epochs with early stopping (patience=2)
-
-6) Reproduce a FAST demo (exact notebook steps)
-- Open `reproduce.ipynb` and run the setup cells.
-- In the `FAST_CONFIG` cell set `FAST_VALIDATION=True` (the notebook merges FAST onto PAPER config).
-- Optionally set `LOAD_CHECKPOINT_IF_EXISTS=False` to train from scratch.
-- Run the main training cell — FAST mode will use smaller datasets and fewer epochs for a quick run.
-
-7) Reproduce the targeted resume run used for debugging
-- Place `models/BEAL_seed42_round*.pt` into `models/` in the D: copy or point the notebook to your checkpoints.
-- Set `LOAD_CHECKPOINT_IF_EXISTS=True`, `WARM_START=True`, and `EXTRA_EPOCHS_ON_CHECKPOINT=5` (or desired value).
-- Run the resume/fine-tune cell — it will load the latest checkpoint and run the extra epochs.
-
-8) Headless commands for exact reproducibility
-```powershell
-cd D:\deeplearning_project
-jupyter nbconvert --to notebook --execute reproduce.ipynb --output reproduce_run.ipynb --ExecutePreprocessor.timeout=14400
-```
-
-9) Files to add for stronger reproducibility
-- `requirements.txt` (pinned versions)
-- `configs/paper.yaml` and `configs/fast.yaml` with the exact config values used in the notebook
-- `scripts/download_data.ps1` or `download_data.sh` to download large datasets / checkpoints
-
-10) Troubleshooting notes
-- If `micro-F1==0` at threshold 0.5 but loss decreases: run a threshold sweep; plot probability histograms; try longer fine-tuning or lower the LR.
-- If the aggressive runner errors on batch shapes, run the data/model setup cells first and use the `unpack_batch` helper; inspect one batch (`repr(next(iter(train_loader)))`) to see exact structure.
-
-11) Reproducibility checklist
-- Fix seeds: `random`, `numpy`, `torch` (+ `torch.cuda.manual_seed_all`)
-- Save the git commit hash and full config to `results/statistics.json` for each run
-- Export `pip freeze > requirements-frozen.txt` once you lock the environment
-
-If you'd like, I can now add a pinned `requirements.txt` and a `configs/` folder with `paper.yaml` and `fast.yaml` to the repo and push them. Tell me which you want me to add next.
+Tell me which of the above you want next (configs, requirements, scripts, or sample visual artifacts) and I'll prepare the files and a PR for you.
